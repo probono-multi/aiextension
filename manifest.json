@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Automation Designer",
+  "version": "0.1",
+  "description": "AI-assisted automation design extension",
+  "permissions": ["storage", "scripting", "activeTab"],
+  "background": {
+    "service_worker": "background/store.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/picker.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
