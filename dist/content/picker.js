@@ -55,6 +55,8 @@ document.addEventListener("click", (e) => {
     const el = e.target;
     if (!el)
         return;
+    const rawLocators = extractLocators(el);
+    const rankedLocators = rankLocators(rawLocators, el);
     const descriptor = {
         elementId: crypto.randomUUID(),
         pageUrl: window.location.href,
@@ -68,7 +70,8 @@ document.addEventListener("click", (e) => {
             ariaLabel: el.getAttribute("aria-label") || undefined,
             dataTestId: el.getAttribute("data-testid") || undefined
         },
-        locators: extractLocators(el),
+        locators: rawLocators,
+        rankedLocators: rankedLocators,
         state: {
             visible: isVisible(el),
             enabled: !el.disabled,
@@ -79,3 +82,57 @@ document.addEventListener("click", (e) => {
     console.clear();
     console.log("🔷 Captured Element Descriptor", descriptor);
 }, true);
+function rankLocators(raw, el) {
+    const ranked = [];
+    const penalize = (value, base) => {
+        let score = base;
+        if (/\d/.test(value))
+            score -= 10;
+        if (value.split(">").length > 3)
+            score -= 10;
+        if (value.length > 30)
+            score -= 5;
+        return Math.max(score, 0);
+    };
+    if (el.getAttribute("data-testid")) {
+        ranked.push({
+            strategy: "dataTestId",
+            value: `[data-testid="${el.getAttribute("data-testid")}"]`,
+            stabilityScore: 95,
+            reason: "Explicit test id"
+        });
+    }
+    if (raw.role) {
+        ranked.push({
+            strategy: "role",
+            value: raw.role,
+            stabilityScore: penalize(raw.role, 90),
+            reason: "ARIA role based selector"
+        });
+    }
+    if (raw.css) {
+        ranked.push({
+            strategy: "css",
+            value: raw.css,
+            stabilityScore: penalize(raw.css, 75),
+            reason: "CSS selector"
+        });
+    }
+    if (raw.xpath) {
+        ranked.push({
+            strategy: "xpath",
+            value: raw.xpath,
+            stabilityScore: penalize(raw.xpath, 40),
+            reason: "XPath selector"
+        });
+    }
+    if (raw.text) {
+        ranked.push({
+            strategy: "text",
+            value: raw.text,
+            stabilityScore: penalize(raw.text, 30),
+            reason: "Visible text selector"
+        });
+    }
+    return ranked.sort((a, b) => b.stabilityScore - a.stabilityScore);
+}
