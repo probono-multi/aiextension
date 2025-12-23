@@ -49,6 +49,26 @@ document.addEventListener("mouseover", (e) => {
     if (hoveredEl)
         highlight(hoveredEl);
 });
+function getPageKey() {
+    return new URL(window.location.href).pathname || "/";
+}
+function saveToRepository(descriptor) {
+    const pageKey = getPageKey();
+    chrome.storage.local.get(["automation_repo"], (result) => {
+        const repo = (result.automation_repo ?? {});
+        if (!repo[pageKey]) {
+            repo[pageKey] = {
+                pageName: pageKey.replace(/\W+/g, "") || "home",
+                pageUrl: pageKey,
+                elements: []
+            };
+        }
+        repo[pageKey].elements.push(descriptor);
+        chrome.storage.local.set({ automation_repo: repo }, () => {
+            console.log("✅ Element stored in Object Repository", repo);
+        });
+    });
+}
 document.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
