@@ -1,12 +1,18 @@
-import { getXPath } from "./dom-utils";
+import { getXPath } from "./dom-utils.js";
 export function extractLocators(el) {
-    const role = el.getAttribute("role");
-    const ariaLabel = el.getAttribute("aria-label");
     return {
-        css: getUniqueCss(el),
-        xpath: getXPath(el),
-        role: role ? `${role}[name="${ariaLabel || el.innerText}"]` : undefined,
-        text: el.innerText?.trim() || undefined
+        role: el.getAttribute("role") || undefined,
+        label: el.getAttribute("aria-label") ||
+            el.getAttribute("aria-labelledby") ||
+            undefined,
+        placeholder: el.placeholder || undefined,
+        title: el.getAttribute("title") || undefined,
+        text: el.innerText?.trim() || undefined,
+        testid: el.getAttribute("data-testid") ||
+            el.getAttribute("data-test") ||
+            undefined,
+        css: el.id ? `#${el.id}` : el.tagName.toLowerCase(),
+        xpath: getXPath(el)
     };
 }
 function getUniqueCss(el) {

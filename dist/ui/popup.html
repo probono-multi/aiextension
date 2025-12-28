@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" href="popup.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+
+  <body>
+    <div class="container">
+      <header>
+        <div class="logo" aria-hidden="true">🔧</div>
+        <div class="title">Automation Designer</div>
+      </header>
+
+      <p class="tagline">Capture resilient locators and export Playwright Page Objects with robust fallback strategies.</p>
+
+      <div class="controls">
+        <label class="field">
+          <div class="label">Language</div>
+          <select id="language" class="select">
+            <option value="ts">Playwright TypeScript</option>
+            <option value="py">Playwright Python</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <div class="label">Fallback strategy</div>
+          <select id="fallback" class="select">
+            <option value="chain">Or-chain (fast)</option>
+            <option value="sequential">Sequential (robust)</option>
+            <option value="trycatch">Try/catch (diagnostic)</option>
+          </select>
+        </label>
+
+        <label class="toggle">
+          <input type="checkbox" id="captureToggle" />
+          <span>Capture Mode</span>
+        </label>
+
+        <div class="actions">
+          <button id="exportBtn" class="primary">Export Page Objects</button>
+          <button id="clearBtn" class="muted">Clear</button>
+        </div>
+      </div>
+
+      <footer>
+        <small class="muted">Tip: Use <strong>strategy</strong> parameter on exported methods to force a locator.</small>
+      </footer>
+    </div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

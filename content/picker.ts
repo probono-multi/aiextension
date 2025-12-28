@@ -1,217 +1,360 @@
-console.log("🚀 Automation Designer content script loaded");
+console.log("🚀 picker.ts loaded");
 
-function getXPath(element: Element): string {
-  if ((element as HTMLElement).id) {
-    return `//*[@id="${(element as HTMLElement).id}"]`;
+let isCaptureEnabled = false;
+
+/* Capture mode sync */
+chrome.storage.local.get(["captureMode"], res => {
+  isCaptureEnabled = Boolean(res.captureMode);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.captureMode) {
+    isCaptureEnabled = Boolean(changes.captureMode.newValue);
+  }
+});
+
+/* Hover highlight */
+let hoveredEl: HTMLElement | null = null;
+const HIGHLIGHT = "2px solid #ff0066";
+
+document.addEventListener("mouseover", e => {
+  const el = e.target as HTMLElement;
+  if (!el) return;
+
+  if (hoveredEl && hoveredEl !== el) hoveredEl.style.outline = "";
+  hoveredEl = el;
+  hoveredEl.style.outline = HIGHLIGHT;
+});
+
+/* Locator extraction */
+function getLabelText(el: HTMLElement): string | undefined {
+  // Prefer <label for="id">, then parent <label>
+  if (el.id) {
+    const labelEl = document.querySelector(`label[for="${el.id}"]`);
+    if (labelEl) return labelEl.textContent?.trim() || undefined;
   }
 
-  const parts: string[] = [];
-
-  while (element && element.nodeType === Node.ELEMENT_NODE) {
-    let index = 1;
-    let sibling = element.previousElementSibling;
-
-    while (sibling) {
-      if (sibling.tagName === element.tagName) index++;
-      sibling = sibling.previousElementSibling;
-    }
-
-    parts.unshift(`${element.tagName.toLowerCase()}[${index}]`);
-    element = element.parentElement!;
+  let parent: HTMLElement | null = el.parentElement;
+  while (parent) {
+    if (parent.tagName.toLowerCase() === "label") return parent.textContent?.trim() || undefined;
+    parent = parent.parentElement;
   }
 
-  return "/" + parts.join("/");
+  return undefined;
 }
 
-function isVisible(el: HTMLElement): boolean {
-  const style = window.getComputedStyle(el);
-  return (
-    style.display !== "none" &&
-    style.visibility !== "hidden" &&
-    el.offsetParent !== null
-  );
+function getXPath(el: HTMLElement): string {
+  if (el === document.documentElement) return "/";
+  const parts: string[] = [];
+  let node: HTMLElement | null = el;
+
+  while (node && node.nodeType === Node.ELEMENT_NODE) {
+    let index = 1;
+    let sibling = node.previousElementSibling;
+    while (sibling) {
+      if (sibling.nodeName === node.nodeName) index++;
+      sibling = sibling.previousElementSibling;
+    }
+    const part = `${node.nodeName.toLowerCase()}${index > 1 ? `[${index}]` : ""}`;
+    parts.unshift(part);
+    node = node.parentElement;
+  }
+
+  return `/${parts.join("/")}`;
 }
 
 function extractLocators(el: HTMLElement) {
-  const role = el.getAttribute("role");
-  const ariaLabel = el.getAttribute("aria-label");
+  const id = el.id || undefined;
+  const name = el.getAttribute("name") || undefined;
+  const placeholder = (el as HTMLInputElement).placeholder || undefined;
+  const ariaLabel = el.getAttribute("aria-label") || undefined;
+  const ariaLabelledBy = el.getAttribute("aria-labelledby") || undefined;
+  const role = el.getAttribute("role") || undefined;
+  const title = el.getAttribute("title") || undefined;
+  const alt = el.getAttribute("alt") || undefined;
+  const testid = el.getAttribute("data-testid") || el.getAttribute("data-test") || undefined;
+  const text = el.innerText?.trim() || undefined;
+  const css = id
+    ? `#${id}`
+    : (() => {
+        const classes = el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/).join(".") : "";
+        return `${el.tagName.toLowerCase()}${classes}`;
+      })();
 
-  return {
-    css: el.id ? `#${el.id}` : el.tagName.toLowerCase(),
-    xpath: getXPath(el),
-    role: role ? `${role}[name="${ariaLabel || el.innerText}"]` : undefined,
-    text: el.innerText?.trim() || undefined
-  };
+  const label = getLabelText(el) || ariaLabel || (ariaLabelledBy ? document.getElementById(ariaLabelledBy)?.textContent?.trim() : undefined);
+  const xpath = getXPath(el);
+
+  return { id, name, placeholder, ariaLabel, ariaLabelledBy, role, title, alt, testid, text, css, label, xpath };
 }
 
-let hoveredEl: HTMLElement | null = null;
-const HIGHLIGHT_STYLE = "2px solid #ff0066";
+function rankLocators(raw: any) {
+  const ranked: any[] = [];
 
-function highlight(el: HTMLElement) {
-  el.style.outline = HIGHLIGHT_STYLE;
-}
+  // Highest confidence: explicit labels and test ids (mapped to getBy*)
+  if (raw.label) ranked.push({ strategy: "label", playwrightKind: "getByLabel", value: raw.label, stabilityScore: 100, reason: "label text" });
+  if (raw.testid) ranked.push({ strategy: "testid", playwrightKind: "getByTestId", value: raw.testid, stabilityScore: 98, reason: "data-testid" });
+  if (raw.placeholder) ranked.push({ strategy: "placeholder", playwrightKind: "getByPlaceholder", value: raw.placeholder, stabilityScore: 97, reason: "placeholder" });
 
-function unhighlight(el: HTMLElement) {
-  el.style.outline = "";
-}
+  // semantic selectors
+  if (raw.role && raw.role !== "presentation") ranked.push({ strategy: "role", playwrightKind: "getByRole", value: raw.role, stabilityScore: 95, reason: "role" });
+  if (raw.title) ranked.push({ strategy: "title", playwrightKind: "getByTitle", value: raw.title, stabilityScore: 90, reason: "title" });
+  if (raw.alt) ranked.push({ strategy: "alt", playwrightKind: "getByAltText", value: raw.alt, stabilityScore: 90, reason: "alt text" });
+  if (raw.text) ranked.push({ strategy: "text", playwrightKind: "getByText", value: raw.text, stabilityScore: 80, reason: "visible text" });
 
-document.addEventListener("mouseover", (e) => {
-  if (hoveredEl) unhighlight(hoveredEl);
-  hoveredEl = e.target as HTMLElement;
-  if (hoveredEl) highlight(hoveredEl);
-});
+  // attribute and id-based locators (strong fallbacks)
+  if (raw.id) ranked.push({ strategy: "id", playwrightKind: "locator", value: `#${raw.id}`, stabilityScore: 88, reason: "id" });
+  if (raw.name) ranked.push({ strategy: "name", playwrightKind: "locator", value: `[name=\"${raw.name}\"]`, stabilityScore: 85, reason: "name" });
+  if (raw.css) ranked.push({ strategy: "css", playwrightKind: "locator", value: raw.css, stabilityScore: 75, reason: "tag + classes" });
 
-function getPageKey(): string {
-  return new URL(window.location.href).pathname || "/";
-}
+  // Combined attributes (useful for disambiguation)
+  const attrs: string[] = [];
+  if (raw.id) attrs.push(`#${raw.id}`);
+  if (raw.testid) attrs.push(`[data-testid=\"${raw.testid}\"]`);
+  if (raw.name) attrs.push(`[name=\"${raw.name}\"]`);
+  if (attrs.length) ranked.push({ strategy: "combined", playwrightKind: "locator", value: attrs.join(""), stabilityScore: 82, reason: "combined attributes" });
 
-interface PageObject {
-  pageName: string;
-  pageUrl: string;
-  elements: any[];
-}
+  // XPath fallback (less preferred but comprehensive)
+  if (raw.xpath) ranked.push({ strategy: "xpath", playwrightKind: "xpath", value: raw.xpath, stabilityScore: 50, reason: "xpath" });
 
-type AutomationRepo = Record<string, PageObject>;
-
-
-function saveToRepository(descriptor: any) {
-  const pageKey = getPageKey();
-
-  chrome.storage.local.get(["automation_repo"], (result) => {
-  console.log("📦 Automation Repo", result.automation_repo);
-});
-
-
-  chrome.storage.local.get(["automation_repo"], (result) => {
-    const repo = (result.automation_repo ?? {}) as AutomationRepo;
-
-
-    if (!repo[pageKey]) {
-      repo[pageKey] = {
-        pageName: pageKey.replace(/\W+/g, "") || "home",
-        pageUrl: pageKey,
-        elements: []
-      };
-    }
-
-    repo[pageKey].elements.push(descriptor);
-
-    chrome.storage.local.set({ automation_repo: repo }, () => {
-      console.log("✅ Element stored in Object Repository", repo);
-    });
+  // Deduplicate and sort by stability
+  const seen = new Set<string>();
+  const deduped = ranked.filter((r) => {
+    const key = `${r.playwrightKind}|${r.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
+
+  return deduped.sort((a, b) => b.stabilityScore - a.stabilityScore);
 }
 
-
+/* Click capture */
 document.addEventListener(
   "click",
-  (e) => {
+  e => {
+    if (!isCaptureEnabled) return;
+
     e.preventDefault();
     e.stopPropagation();
 
-    const el = e.target as HTMLElement;
-    if (!el) return;
+    if (!hoveredEl) return;
 
-    const rawLocators = extractLocators(el);
-    const rankedLocators = rankLocators(rawLocators, el);
+    hoveredEl.style.outline = "";
+
+    const raw = extractLocators(hoveredEl);
+    const ranked = rankLocators(raw);
 
     const descriptor = {
       elementId: crypto.randomUUID(),
-      pageUrl: window.location.href,
-      tagName: el.tagName.toLowerCase(),
-      innerText: el.innerText?.trim(),
+      pageUrl: location.href,
+      tagName: hoveredEl.tagName.toLowerCase(),
+      innerText: hoveredEl.innerText?.trim(),
 
+      // Raw locators and derived attributes for storage and rendering
+      locators: raw,
       attributes: {
-        id: el.id || undefined,
-        name: el.getAttribute("name") || undefined,
-        class: el.className || undefined,
-        role: el.getAttribute("role") || undefined,
-        ariaLabel: el.getAttribute("aria-label") || undefined,
-        dataTestId: el.getAttribute("data-testid") || undefined
+        id: raw.id,
+        name: raw.name,
+        placeholder: raw.placeholder,
+        ariaLabel: raw.ariaLabel,
+        ariaLabelledBy: raw.ariaLabelledBy,
+        role: raw.role,
+        title: raw.title,
+        alt: raw.alt,
+        testid: raw.testid
       },
 
-      
-      locators: rawLocators,
-      rankedLocators: rankedLocators,
-
-      state: {
-        visible: isVisible(el),
-        enabled: !(el as HTMLInputElement).disabled,
-        readonly: (el as HTMLInputElement).readOnly
-      },
-
+      // Ranked locator candidates
+      rankedLocators: ranked,
       capturedAt: new Date().toISOString()
     };
 
-    console.clear();
-    console.log("🔷 Captured Element Descriptor", descriptor);
+    chrome.runtime.sendMessage({
+      type: "STORE_ELEMENT",
+      payload: descriptor
+    });
+
+    console.log("✅ Captured", descriptor);
   },
   true
 );
 
-function rankLocators(raw: {
-  css?: string;
-  xpath?: string;
-  role?: string;
-  text?: string;
-}, el: HTMLElement): any[] {
 
-  const ranked: any[] = [];
 
-  const penalize = (value: string, base: number) => {
-    let score = base;
+// console.log("🚀 picker.ts loaded");
 
-    if (/\d/.test(value)) score -= 10;
-    if (value.split(">").length > 3) score -= 10;
-    if (value.length > 30) score -= 5;
+// /* ============================================================
+//    🔹 Capture Mode State
+// ============================================================ */
 
-    return Math.max(score, 0);
-  };
+// let isCaptureEnabled = false;
 
-  if (el.getAttribute("data-testid")) {
-    ranked.push({
-      strategy: "dataTestId",
-      value: `[data-testid="${el.getAttribute("data-testid")}"]`,
-      stabilityScore: 95,
-      reason: "Explicit test id"
-    });
-  }
+// chrome.storage.local.get(["captureMode"], (res) => {
+//   isCaptureEnabled = Boolean(res.captureMode);
+// });
 
-  if (raw.role) {
-    ranked.push({
-      strategy: "role",
-      value: raw.role,
-      stabilityScore: penalize(raw.role, 90),
-      reason: "ARIA role based selector"
-    });
-  }
+// chrome.storage.onChanged.addListener((changes, area) => {
+//   if (area === "local" && changes.captureMode) {
+//     isCaptureEnabled = Boolean(changes.captureMode.newValue);
+//     console.log("🎥 Capture mode:", isCaptureEnabled ? "ON" : "OFF");
+//   }
+// });
 
-  if (raw.css) {
-    ranked.push({
-      strategy: "css",
-      value: raw.css,
-      stabilityScore: penalize(raw.css, 75),
-      reason: "CSS selector"
-    });
-  }
+// /* ============================================================
+//    🔹 Locator Extraction
+// ============================================================ */
 
-  if (raw.xpath) {
-    ranked.push({
-      strategy: "xpath",
-      value: raw.xpath,
-      stabilityScore: penalize(raw.xpath, 40),
-      reason: "XPath selector"
-    });
-  }
+// function extractLocators(el: HTMLElement) {
+//   return {
+//     role: el.getAttribute("role") || undefined,
+//     label:
+//       el.getAttribute("aria-label") ||
+//       el.getAttribute("aria-labelledby") ||
+//       undefined,
+//     placeholder: (el as HTMLInputElement).placeholder || undefined,
+//     title: el.getAttribute("title") || undefined,
+//     text: el.innerText?.trim() || undefined,
+//     testid:
+//       el.getAttribute("data-testid") ||
+//       el.getAttribute("data-test") ||
+//       undefined,
+//     css: el.id ? `#${el.id}` : el.tagName.toLowerCase()
+//   };
+// }
 
-  if (raw.text) {
-    ranked.push({
-      strategy: "text",
-      value: raw.text,
-      stabilityScore: penalize(raw.text, 30),
-      reason: "Visible text selector"
-    });
-  }
+// /* ============================================================
+//    🔹 Locator Ranking
+// ============================================================ */
 
-  return ranked.sort((a, b) => b.stabilityScore - a.stabilityScore);
-}
+// function rankLocators(raw: any) {
+//   const ranked: any[] = [];
+
+//   if (raw.label) {
+//     ranked.push({
+//       strategy: "label",
+//       value: raw.label,
+//       playwrightKind: "getByLabel",
+//       stabilityScore: 95
+//     });
+//   }
+
+//   if (raw.placeholder) {
+//     ranked.push({
+//       strategy: "placeholder",
+//       value: raw.placeholder,
+//       playwrightKind: "getByPlaceholder",
+//       stabilityScore: 90
+//     });
+//   }
+
+//   if (raw.role && raw.text) {
+//     ranked.push({
+//       strategy: "role",
+//       value: raw.role,
+//       playwrightKind: "getByRole",
+//       stabilityScore: 85
+//     });
+//   }
+
+//   if (raw.text) {
+//     ranked.push({
+//       strategy: "text",
+//       value: raw.text,
+//       playwrightKind: "getByText",
+//       stabilityScore: 70
+//     });
+//   }
+
+//   if (raw.css) {
+//     ranked.push({
+//       strategy: "css",
+//       value: raw.css,
+//       playwrightKind: "locator",
+//       stabilityScore: 50
+//     });
+//   }
+
+//   return ranked.sort((a, b) => b.stabilityScore - a.stabilityScore);
+// }
+
+// /* ============================================================
+//    🔹 Hover Highlight
+// ============================================================ */
+
+// let hoveredEl: HTMLElement | null = null;
+// const HIGHLIGHT_STYLE = "2px solid #ff0066";
+
+// document.addEventListener("mouseover", (e) => {
+//   const el = e.target as HTMLElement;
+//   if (!el) return;
+
+//   if (hoveredEl && hoveredEl !== el) {
+//     hoveredEl.style.outline = "";
+//   }
+
+//   hoveredEl = el;
+//   hoveredEl.style.outline = HIGHLIGHT_STYLE;
+// });
+
+// /* ============================================================
+//    🔹 Click Capture
+// ============================================================ */
+
+// document.addEventListener(
+//   "click",
+//   (e) => {
+//     if (!isCaptureEnabled) return;
+
+//     e.preventDefault();
+//     e.stopPropagation();
+
+//     if (!hoveredEl) return;
+
+//     const el = hoveredEl;
+//     el.style.outline = "";
+
+//     // Ignore junk clicks
+//     if (
+//       el === document.body ||
+//       el === document.documentElement ||
+//       el.innerText.length > 500
+//     ) {
+//       return;
+//     }
+
+//     const rawLocators = extractLocators(el);
+//     const rankedLocators = rankLocators(rawLocators);
+
+//     if (!rankedLocators.length) {
+//       console.warn("⛔ No usable locators found");
+//       return;
+//     }
+
+//     const descriptor = {
+//       elementId: crypto.randomUUID(),
+//       pageUrl: location.href,
+//       tagName: el.tagName.toLowerCase(),
+//       innerText: el.innerText?.trim(),
+//       attributes: {
+//         id: el.id || undefined,
+//         name: el.getAttribute("name") || undefined,
+//         placeholder: el.getAttribute("placeholder") || undefined,
+//         role: el.getAttribute("role") || undefined
+//       },
+
+//       // 🔥 THIS ENABLES getBy*
+//       locators: rawLocators,
+//       rankedLocators: rankedLocators,
+
+//       capturedAt: new Date().toISOString()
+//     };
+
+//     chrome.runtime.sendMessage({
+//       type: "STORE_ELEMENT",
+//       payload: descriptor
+//     });
+
+//     console.log("✅ Captured element", descriptor);
+//   },
+//   true
+// );
