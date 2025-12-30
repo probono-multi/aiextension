@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: 'Playwright Dashboards'
+    orgId: 1
+    folder: 'Playwright'
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
+    editable: false
+    disableDeletion: false

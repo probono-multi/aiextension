@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: InfluxDB
+    type: influxdb
+    access: proxy
+    orgId: 1
+    url: http://influxdb:8086
+    isDefault: true
+    editable: true
+    jsonData:
+      defaultBucket: test_runs
+      organization: automation
+      httpMode: POST
+    secureJsonData:
+      token: automation-token
