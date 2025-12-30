@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Gmail Playwright POM Example ✅
 
 This repository is a minimal Playwright + TypeScript POM scaffold to demonstrate logging into Gmail and checking for an email by subject.
