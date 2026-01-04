@@ -22,6 +22,12 @@ export type PlaywrightLocatorKind =
   | "locator";
 
 export interface RankedLocator {
+  // Optional logical name for the element (used for exports)
+  name?: string;
+
+  // Optional explicit rank (higher => higher priority). If missing, exporter will fall back to stabilityScore.
+  rank?: number;
+
   strategy?: LocatorStrategy;
   value: string;
 

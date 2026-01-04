@@ -1,42 +1,31 @@
-import { getXPath } from "./dom-utils.js";
-
-
 export function extractLocators(el: HTMLElement) {
   return {
     role: el.getAttribute("role") || undefined,
-    label:
-      el.getAttribute("aria-label") ||
-      el.getAttribute("aria-labelledby") ||
-      undefined,
+    label: el.getAttribute("aria-label") || undefined,
     placeholder: (el as HTMLInputElement).placeholder || undefined,
-    title: el.getAttribute("title") || undefined,
-    text: el.innerText?.trim() || undefined,
-    testid:
-      el.getAttribute("data-testid") ||
-      el.getAttribute("data-test") ||
-      undefined,
-    css: el.id ? `#${el.id}` : el.tagName.toLowerCase(),
-    xpath: getXPath(el)
+    testid: el.getAttribute("data-testid") || undefined,
+    text: el.innerText?.trim(),
+    css: el.id ? `#${el.id}` : undefined
   };
 }
 
-function getUniqueCss(el: HTMLElement): string {
-  if (el.id) return `#${el.id}`;
+export function rankLocators(raw: any) {
+  const ranked = [];
 
-  const path: string[] = [];
-  let element: HTMLElement | null = el;
+  if (raw.placeholder)
+    ranked.push({ playwrightKind: "getByPlaceholder", value: raw.placeholder, score: 95 });
 
-  while (element && element.nodeType === Node.ELEMENT_NODE) {
-    let selector = element.tagName.toLowerCase();
+  if (raw.label)
+    ranked.push({ playwrightKind: "getByLabel", value: raw.label, score: 90 });
 
-    if (element.className) {
-      const classes = element.className.split(" ").filter(Boolean);
-      selector += "." + classes.join(".");
-    }
+  if (raw.role)
+    ranked.push({ playwrightKind: "getByRole", value: raw.role, score: 85 });
 
-    path.unshift(selector);
-    element = element.parentElement;
-  }
+  if (raw.text && raw.text.length < 80)
+    ranked.push({ playwrightKind: "getByText", value: raw.text, score: 70 });
 
-  return path.join(" > ");
+  if (raw.css)
+    ranked.push({ playwrightKind: "locator", value: raw.css, score: 50 });
+
+  return ranked.sort((a, b) => b.score - a.score);
 }

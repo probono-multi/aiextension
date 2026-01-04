@@ -1,48 +1,27 @@
 import { saveElement } from "./store.js";
-import { generatePlaywrightTS } from "../codegen/playwright-ts.js";
-import { generatePlaywrightPY } from "../codegen/playwright-py.js";
+import { generateTS } from "../codegen/playwright-ts.js";
+import { generatePY } from "../codegen/playwright-py.js";
+import { AutomationRepo } from "../domain/repo-model.js";
 
-console.log("🚀 Background service worker started");
-
-chrome.runtime.onMessage.addListener((message) => {
-  if (!message?.type) return;
-
-  switch (message.type) {
-    case "STORE_ELEMENT":
-      saveElement(message.payload);
-      break;
-
-    case "EXPORT_REPO":
-      exportRepo(message.payload.language, message.payload.fallback);
-      break;
-
-    default:
-      console.warn("⚠️ Unknown message type", message.type);
+chrome.runtime.onMessage.addListener(msg => {
+  if (msg.type === "STORE_ELEMENT") {
+    saveElement(msg.payload);
   }
-});
 
-/* ============================================================
-   🔹 Export Repository (MV3 SAFE)
-============================================================ */
-function exportRepo(language: "ts" | "py", fallback: string = "chain") {
-  chrome.storage.local.get(["automation_repo"], (res) => {
-    const repo = res.automation_repo || {};
+  if (msg.type === "EXPORT_REPO") {
+    chrome.storage.local.get(["automation_repo"], res => {
+      const repo = (res.automation_repo ?? {}) as AutomationRepo;
 
-    Object.values(repo).forEach((page: any) => {
-      const code =
-        language === "py"
-          ? generatePlaywrightPY(page, fallback)
-          : generatePlaywrightTS(page, fallback);
-
-      const dataUrl =
-        "data:text/plain;charset=utf-8," +
-        encodeURIComponent(code);
+      const output =
+        msg.payload.language === "py"
+          ? generatePY(repo)
+          : generateTS(repo);
 
       chrome.downloads.download({
-        url: dataUrl,
-        filename: `${page.pageName}.${language}`,
+        url: "data:text/plain;charset=utf-8," + encodeURIComponent(output),
+        filename: `page_objects.${msg.payload.language}`,
         saveAs: true
       });
     });
-  });
-}
+  }
+});

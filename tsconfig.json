@@ -2,13 +2,12 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
+    "moduleResolution": "Node",
     "outDir": "dist",
     "rootDir": ".",
-    "moduleResolution": "Node",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["background/**/*.ts", "content/**/*.ts", "ui/**/*.ts", "extension/**/*.ts"],
-  "exclude": ["dist", "node_modules"]
+  "include": ["background/**/*.ts", "codegen/**/*.ts", "content/**/*.ts", "ui/**/*.ts"]
 }

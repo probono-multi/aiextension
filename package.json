@@ -2,10 +2,12 @@
   "devDependencies": {
     "@playwright/mcp": "^0.0.53",
     "@types/chrome": "^0.1.32",
-    "cpy-cli": "^6.0.0"
+    "cpy-cli": "^6.0.0",
+    "ts-node": "^10.9.1"
   },
   "scripts": {
-  "build": "tsc && cpy manifest.json dist && cpy ui/*.html dist/ui && cpy ui/*.css dist/ui"
-}
+    "build": "tsc && cpy manifest.json dist && cpy ui/*.html dist/ui && cpy ui/*.css dist/ui",
+    "test:locators": "ts-node ./tests/locator-exporter-objects.test.ts"
+  }
 
 }

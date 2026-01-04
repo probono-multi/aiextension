@@ -1,50 +1,16 @@
 "use strict";
-console.log("🧩 popup.ts loaded");
-/* ============================================================
-   🔹 DOM Elements
-============================================================ */
-const captureToggle = document.getElementById("captureToggle");
 const exportBtn = document.getElementById("exportBtn");
-const clearBtn = document.getElementById("clearBtn");
 const languageSelect = document.getElementById("language");
-/* ============================================================
-   🔹 Load Initial Capture Mode State
-============================================================ */
-chrome.storage.local.get(["captureMode"], (res) => {
-    captureToggle.checked = Boolean(res.captureMode);
-});
-/* ============================================================
-   🔹 Capture Mode Toggle
-============================================================ */
+const captureToggle = document.getElementById("captureToggle");
+chrome.storage.local.get(["captureMode"], r => captureToggle.checked = !!r.captureMode);
 captureToggle.addEventListener("change", () => {
-    const enabled = captureToggle.checked;
-    chrome.storage.local.set({ captureMode: enabled }, () => {
-        console.log("🎥 Capture mode:", enabled ? "ON" : "OFF");
-    });
+    chrome.storage.local.set({ captureMode: captureToggle.checked });
 });
-/* ============================================================
-   🔹 Export Page Objects
-============================================================ */
 exportBtn.addEventListener("click", () => {
-    const language = languageSelect.value; // 'ts' or 'py'
-    const fallback = document.getElementById("fallback").value || "chain";
     chrome.runtime.sendMessage({
         type: "EXPORT_REPO",
         payload: {
-            language,
-            fallback
+            language: languageSelect.value === "python" ? "py" : "ts"
         }
-    });
-    console.log("📤 Export requested:", language, fallback);
-});
-/* ============================================================
-   🔹 Clear Repository
-============================================================ */
-clearBtn.addEventListener("click", () => {
-    const confirmed = confirm("Clear all captured elements?");
-    if (!confirmed)
-        return;
-    chrome.storage.local.set({ automation_repo: {} }, () => {
-        console.log("🧹 Repository cleared");
     });
 });

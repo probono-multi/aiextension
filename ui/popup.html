@@ -24,11 +24,27 @@
         </label>
 
         <label class="field">
+          <div class="label">Format</div>
+          <select id="format" class="select">
+            <option value="dictionary">Dictionary / Object</option>
+            <option value="class">Class</option>
+          </select>
+        </label>
+
+        <label class="field">
           <div class="label">Fallback strategy</div>
           <select id="fallback" class="select">
             <option value="chain">Or-chain (fast)</option>
             <option value="sequential">Sequential (robust)</option>
             <option value="trycatch">Try/catch (diagnostic)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <div class="label">Export mode</div>
+          <select id="exportMode" class="select">
+            <option value="objects">Objects only (no actions)</option>
+            <option value="full">Full POM (objects + actions)</option>
           </select>
         </label>
 
